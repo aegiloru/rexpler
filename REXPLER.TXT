@@ -1,0 +1,1529 @@
+* ###########################################################
+*
+*			REXPLER
+*	 Robot EXPLorador de pERrimetros
+* ###########################################################
+*
+* Proposito:	Unidad de control de navegación de la unidad
+* REXPLER.
+*
+* Autores:	Luis Jara / Ariel Guerrero
+*
+* Fecha:	15 de julio del 2000.
+* ###########################################################
+* Version	Fecha		Comentario
+* -------	-----		----------
+* 0		15/07/00	Inicio de codificacion
+* 1		19/07/00	Prueba de sensores
+* 2		21/07/00	Documentacion
+* 3		21/07/00	Maniobras de acoplamiento
+* 4		28/07/00	Documentacion
+* 5		28/07/00	Guardado de datos y condicion de Final
+* 6		29/07/00	Modificacion de MANIOBRA_B
+* 7		05/08/00	Aplicacion de tres velocidades
+* 8             10/08/00        Documentacion final
+* ###########################################################
+
+* EQUATES
+NORTE		EQU	$4E		Direccion Norte de movimiento
+SUR		EQU	$53		Direccion Sur 	de moviminto
+ESTE		EQU	$45		Direccion Este 	de movimineto
+OESTE		EQU	$4F		Direccion Oeste de movimiento
+
+BITS            EQU     %01000000       Patron de bits para salida
+BITS_R          EQU     %00100000       Patron de bits para salida en reversa
+ALLBITS         EQU     %01000000       Output bit-6 
+ALLBITR 	EQU     %00100000 	Output bit-5
+TOF             EQU     %10000000       Timer overflow flag
+OC1F    	EQU     %10000000  	Output compare 1 flag
+OC2F   	 	EQU     %01000000  	Output compare 2 flag
+OC3F		EQU	%00100000  	Output compare 3 flag
+STOP    	EQU     %00000000	Limpia el pin OC2
+IC1F		EQU	%00000100	Activa Int1
+IC2F		EQU	%00000010	Activa Int2
+IC3F		EQU	%00000001	Activa Int3
+EDGF    	EQU     %00100000       Imput capture edge (BAJADA)
+EDGL		EQU	%00000100	Imput capture edge (SUBIDA)
+EDGLB		EQU	%00000010	Imput capture edge (BAJADA)
+OC2R            EQU     %10000000       OM2,OL2 to reset bit-6 to zero
+OC3R            EQU     %00100000       OM3,OL3 to reset bit-5 to zero
+IZQ		EQU	%00000010	Gira a la izquierda
+FRE             EQU     %00000000       Al frente
+DER		EQU	%00000001	Gira a la derecha
+OUTPORTC        EQU     %00000011       PC(0) y PC(1) como salida
+MISION          EQU     %00000001       Estado del sistema en Mision
+COMUNICACION    EQU     %00000010       Estado del sistema en Comunicacion
+FINISCH         EQU     %00000011       Estado del Sitema en fin de Mision
+CNFI            EQU     %01000000       Configuracion para el Pulse Acumulator
+
+UnPorc		EQU	655	  	1 % de 65536 ciclos
+NTIMES          EQU     93              Numero de TOF's
+ON		EQU	1		Sensor en estado activo
+OFF		EQU	0		Sensor en estado de desactivacion
+CLEAR		EQU	0		Se utiliza para limpiar registros
+TOPE            EQU     31              Cantidad de periodos del TCTN en 1 seg.
+TOPE1           EQU     31              Cantidad de periodos del TCNT por cm. desplazado
+CICLU           EQU     10               Ciclo util para el DRIVER de Traccion en avance inicial
+CICLU1          EQU     10               Ciclo util para el DRIVER de Traccion en maniobras (retroceso)
+CICLU2          EQU     10               Ciclo util para el DRIVER de Traccion en maniobras (avance)
+CICLU3          EQU     10               Ciclo util para el DRIVER de Traccion en recorrido
+AT_MNA          EQU     10               Tiempo de retroceso en MANIOBRA_A por primera vez
+AT_MNA2         EQU     10             Tiempo de retroceso en MANIOBRA_A las demas veces
+AD_MNA          EQU     10              Tiempo de avance en MANIOBRA_A por primera vez
+AD_MNA2         EQU     10              Tiempo de avance en MANIBRA_A las demas veces
+AD_MNB		EQU	10		Tiempo de avance en MANIOBRA_B
+AT_MNB		EQU	10		Tiempo de retroceso en MANIOBRA_B 
+ADEMNB		EQU	10		Tiempo de avance en MANIOBRA_A
+PRECISION       EQU     10               Error permitido para calcular la distancia total
+MIN             EQU     4               Cantidad minima de lados de una habitacion
+NTIMESS         EQU     20               Delay para implementar el antirrebote
+PER             EQU     12              Desplazamiento en centimetro de una vuelta de la rueda
+
+* Definicion de constantes de memoria
+PRG             EQU     $C000           Inicio de area de codigo
+DAT		EQU	$D000		Inicio de area de datos
+STACK		EQU	$DFFF		Inicio de area de pila
+MDAT		EQU	$D0FF		Inicio de area de datos recolectados
+
+* Definición de registros I/O
+REGS    	EQU     $1000	   	Direccion de referencia
+DDRC            EQU     $07             Direccion del dato para el puerto C
+TFLG2           EQU     $25             Registro TFLG2
+TCNT    	EQU     $0E        	TCNT register
+TFLG1   	EQU     $23        	TFLG1 offset
+TCTL1   	EQU     $20        	Timer control reg 1
+TCTL2		EQU	$21	   	Timer control reg 2
+TMSK1		EQU	$22	   	Main Timer Interrupt Mask Register
+TOC1    	EQU     $16        	TOC1 register
+TOC2    	EQU     $18        	TOC2 register
+TOC3		EQU	$1A	   	TOC3 register
+OC1M    	EQU     $0C        	Output compare 1 mask
+OC1D    	EQU     $0D        	Output compare 1 data
+PORTB           EQU     $04             Puerto B
+PORTC           EQU     $03             Puerto C
+PACNT           EQU     $27             Pulse Acumulator Count Register  
+PACTL		EQU	$26		Pulse Acumulat
+
+* ASCII      equates
+ETX		equ     3
+NUL		equ	0
+BEL		equ     7
+
+* Constantes equates
+uDAT		equ     $DA00   Inicio DATOS de comunicacion
+NUML		equ	$DA02	Numero de lados recorridos
+TRES		equ     $03
+
+
+* Vectores de interrupcion
+IC1V		EQU	$00E8		IC1 interrupt vector
+IC2V		EQU	$00E5		IC2 interrupt vector
+IC3V		EQU	$00E2		IC3 interrupt vector
+
+*BUFFALO equtes
+OUTPUT          equ     $E3B3	Rutinas de I/O del buffalo
+INPUT           equ     $E387
+
+
+* Definicion de variables
+		org	DAT
+S_LAT		rmb	1		Sensor lateral desactivado
+S_FRO		rmb	1		Sensor frontal activado
+FINAL		rmb	1		Indicador de fin de mision
+CONTACT		rmb	1		Sensor lateral activado
+CONT            rmb     2               Contador de distancia
+COUNTER         rmb     1               Para el retardo en TRESEG 
+RUMBO           rmb     1               Indicador de direccion de movimiento
+Ciclo		rmb	2		Indica el ciclo util
+Cuant		rmb	2		Variable auxiliar en Calc
+DELAY		rmb	2		Retardo para poder implementar el ciclo util
+CONTD           rmb     1               Contador bandera en NAVEGAR
+Conteo		rmb	1		Igual a CONTD pero para EVALRN
+PUNTERO		rmb	2		Apunta la direccion en donde se guardaran los datos
+DELAY1          rmb     1		Retardo para retroceder en MANIOBRA_A
+DELAY12         rmb     1               Retardo para retroceder en MANIOBRA_A
+DELAY2          rmb     1		Retardo para avanzar MANIOBRA_A
+DELAY22         rmb     1               Retardo para avanzar MANIOBRA_A
+DELAY3          rmb     1		Retardo para avanzar MANIOBRA_B
+DELAY4          rmb     1		Retardo para retroceder en MANIOBRA_B
+DELAY5		rmb	1		Retardo para avanzar en MANIOBRA_B
+RETAR1		rmb	1		Variable auxiliar para retroceder en MANIOBRA_A
+RETAR12         rmb     1               Variable auxiliar para retroceder en MANIOBRA_A
+RETAR1A         rmb     1               Variable auxiliar para retroceder en MANIOBRA_A
+RETAR2		rmb	1		Variable auxiliar para avanzar en MANIOBRA_A
+RETAR22         rmb     1               Variable auxiliar para avanzar en MANIOBRA_A
+RETAR2A         rmb     1               Variable auxiliar para avanzar en MANIOBRA_A
+RETAR3		rmb	1		Variable auxiliar para avanzar en MANIOBRA_B
+RETAR4		rmb	1		Variable auxiliar para retroceder en MANIOBRA_B
+RETAR5		rmb	1		Variable auxiliar para avanzar en MANIOBRA_B
+BANDERA         rmb     1               Bandera en MANIOBRA_A que identifica la primera maniobra de las demas
+LADOS		rmb	1		Cantidad de lados de la habitacion
+L_NORTE		rmb	2		Distancia recorrida en la direccion NORTE
+L_SUR		rmb	2		Distancia recorrida en la direccion SUR
+L_ESTE		rmb	2		Distancia recorrida en la direccion ESTE
+L_OESTE		rmb	2		Distancia recorrida en la direccion OESTE
+MAYOR_A		rmb	2		Variable utilizada para evaluuar la condicion de fin 
+MENOR_A		rmb	2		Variable utilizada para evaluuar la condicion de fin 
+MAYOR_B		rmb	2		Variable utilizada para evaluuar la condicion de fin 
+MENOR_B		rmb	2		Variable utilizada para evaluuar la condicion de fin
+DISTANCIA	rmb	2 		Indica la distancia total recorrida
+Demora          rmb     1               Delay introducido para evitar el rebote
+PAVIEJO         rmb     1               Valor antiguo del registro PACNT
+NUM             rmb     2
+CNTcom		rmb	1
+
+
+* ###########################################################
+*			Principal
+* ###########################################################
+		org	PRG
+		lds	#STACK
+
+* Inicilizacion de variables y registros
+		jsr	INI
+
+* Estado del sistema en Mision
+                ldx     #REGS
+                ldaa    #MISION
+                staa    PORTC,x
+*
+* LOOP1  
+* Mientras (!S_FRO)
+*	AVANZAR();
+*
+LOOP1           tst     S_FRO
+		bne	END_L1
+
+		jsr	AVANZAR
+                bra     LOOP1
+
+END_L1          nop
+
+*
+* LOOP2
+* Mientras (!FINAL)
+*       N_RUMBO();
+*	FRENOS();
+*	ACOPLE();
+*	FRENOS();	
+*	CLR_SENS();
+*	RESET();
+*	CTRL_NAV();
+*	GUARDAR();
+*
+
+LOOP2           tst     FINAL
+		bne	END_L2
+
+                jsr     N_RUMBO
+                jsr     FRENOS
+		jsr	ACOPLE
+		jsr	FRENOS
+		jsr	CLR_SENS
+		jsr	RESET
+		jsr	CTRL_NAV
+		jsr	GUARDAR
+
+                bra     LOOP2
+
+END_L2		jsr	FRENOS
+
+* Se guardan los datos de distancia total recorrida y cantidad de lados
+* Los primeros dos bytes para la distancia, y el sgt. para la cant. de lados
+		ldx	#MDAT
+		ldy	DISTANCIA
+		sty	0,x
+		ldaa	LADOS
+		staa	2,x
+
+* Estado en Comunicacion con la PC
+                ldx     #REGS
+                ldaa    #COMUNICACION
+                staa    PORTC,x
+
+* Esperando comunicacion 
+                jsr     COM
+
+* Fin de Mision
+                ldx     #REGS
+                ldaa    #FINISCH
+                staa    PORTC,x
+* ###########################################################
+		swi			fin programa
+* ###########################################################
+
+
+
+* !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+*			SUBRUTINAS
+* !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+
+
+* **********************************************************
+*			INI
+* **********************************************************
+* Proposito:	Inicializa variables y registros.
+*
+* **********************************************************
+INI	
+* Inicializacion de los estados de los sensores	
+		clr	S_FRO		
+		clr	S_LAT
+		clr	CONTACT
+
+* Inicializacion de variables en general
+		clr	FINAL
+		clr	CONTD
+		clr	Conteo
+		clr	LADOS
+                clr     BANDERA
+
+* Inicializacion de la variable PUNTERO
+		ldx	#MDAT
+		ldab	#3
+		abx
+		stx	PUNTERO
+
+* Inicializacion de variables de 2 BYTES
+		ldx	#CLEAR
+		stx	CONT
+		stx	L_NORTE
+		stx	L_SUR
+		stx	L_ESTE
+		stx	L_OESTE
+		stx	MAYOR_A
+		stx	MAYOR_B
+		stx	MENOR_A
+		stx	MENOR_B
+		stx	DISTANCIA
+
+* Definicion de la primera direccion de movimiento 
+		ldaa	#NORTE
+		staa	RUMBO		RUMBO <- NORTE
+
+* Cofiguracion para el pulse acumulator
+                ldx     #REGS
+                ldaa    #CNFI
+                staa    PACTL,x
+
+* Se limpia el registro PACNT y la variable PAVIEJO
+                clr     PACNT,x
+                clr     PAVIEJO
+
+* Inicializa el ciclo util y los tiempos de retardo                
+		jsr	PROGRAMAR
+
+* Inicializa la interrupcion para los sensores
+		jsr	INT_SENS
+
+* Espera el encenndido
+LOOP3           ldaa    S_FRO
+                cmpa    #OFF
+                beq     LOOP3
+
+* Introduce una espera para prevenir rebotes
+                jsr     TRESEG
+
+* Restablece el valor de S_FRO
+                ldaa    #OFF
+                staa    S_FRO
+
+* Configura los registros del TIMER para el avance  
+                jsr     RESET
+
+* Inicializacion de variables de retardo
+		ldaa    DELAY1
+                staa    RETAR1
+                ldaa    DELAY12
+                staa    RETAR12
+                ldaa    DELAY2
+                staa    RETAR2
+                ldaa    DELAY22
+                staa    RETAR22
+                ldaa    DELAY3
+                staa    RETAR3
+                ldaa    DELAY4
+                staa    RETAR4
+		ldaa    DELAY5
+                staa    RETAR5
+
+* Cofiguracion del Bit 0 y 1 del Puerto C para Salida
+                ldx     #REGS
+                ldaa    #OUTPORTC
+                staa    DDRC,x
+
+* Limpieza de registros de proposito general		
+		clra
+		clrb
+		ldx	#CLEAR
+		ldy	#CLEAR
+
+		rts
+*-----------------------------------------------------------
+*			PROGRAMAR
+*-----------------------------------------------------------
+* Proposito: Programa el ciclo util de la senhal de exitacion
+* para el DRIVER de Traccion. Ademas determina los tiempos 
+* de retroceso y avance de las diferentes maniobras
+*
+*-----------------------------------------------------------
+PROGRAMAR
+
+* Determina los retardos en las maniobras
+                ldaa    #AT_MNA
+                staa    DELAY1
+
+                ldaa    #AT_MNA2
+                staa    DELAY12
+
+		ldaa	#AD_MNA
+                staa    DELAY2
+
+                ldaa    #AD_MNA2
+                staa    DELAY22
+
+		ldaa	#AD_MNB
+                staa    DELAY3
+
+		ldaa	#AT_MNB
+                staa    DELAY4
+
+		ldaa	#ADEMNB
+                staa    DELAY5
+
+* Determina el ciclo util inicial
+		ldy     #CICLU
+                sty     Ciclo
+
+		rts
+*-----------------------------------------------------------
+*			INT_SENS
+*-----------------------------------------------------------
+* Proposito: Se encarga se inicializar el imput capture IC1,
+* IC2 y IC3 para el sensor frontal y lateral 
+*
+*-----------------------------------------------------------
+INT_SENS
+
+		ldx 	#REGS
+
+* Se configura para capturar los flancos de bajada (IC1) y 
+* de subida (IC2) y bajada (IC3)
+                ldaa    #EDGF|EDGL|EDGLB
+                oraa    TCTL2,x
+                staa    TCTL2,x
+
+* Se setean las banderas del imput capture IC1F, IC2F, IC3F	
+                ldaa    #IC1F|IC2F|IC3F
+                oraa    TFLG1,x
+                staa    TFLG1,x
+
+* Se habilita el imput capture para IC1, IC2 e IC3
+                ldaa    #IC1F|IC2F|IC3F
+                oraa    TMSK1,x
+                staa    TMSK1,x
+
+* Se habilitan las interrupciones
+		cli
+
+
+		rts
+
+* **********************************************************
+*                       TRESEG
+* **********************************************************
+* Proposito: Introduce un retardo de 3 segundos de retraso
+* **********************************************************
+TRESEG
+                ldx     #REGS
+* Se limpia primeramente el TOF
+                ldaa    #TOF
+                staa    TFLG2,x
+
+* Se inicializa el contador y se espera por NTIMES
+                ldaa    #NTIMES
+                staa    COUNTER
+
+* Se espera mientras el TOF no es seteado
+SPIN1           ldaa    TFLG2,x
+                bita    #TOF
+                beq     SPIN1
+
+* Despues de que TOF=1;  se vuelve a setear
+                ldaa    #TOF
+                staa    TFLG2,x
+
+* Y se decrementa el contador
+                dec     COUNTER
+
+* IF COUNTER != 0 Bifurca
+                bne     SPIN1
+                rts
+* **********************************************************
+*			AVANZAR
+* **********************************************************
+* Proposito:	La unidad REXPLER avanza en direccion al
+* frente.
+* **********************************************************
+AVANZAR
+
+		ldx 	#REGS
+
+spin            brclr   TFLG1,x OC2F spin
+
+* Reset the OC1F, OC2F
+		ldaa    #OC1F|OC2F
+		oraa	TFLG1,x
+		staa    TFLG1,x
+	
+		rts
+************************************************************
+*                       FRENOS
+************************************************************
+* Proposito: Esta rutina es utilizada para frenar los motores
+* traccion
+************************************************************
+FRENOS          
+		ldx     #REGS
+                ldaa    #STOP
+                staa    OC1D,x
+                staa    OC1M,x
+                rts
+* **********************************************************
+*			ACOPLE
+* **********************************************************
+* Proposito:    Segun S_FRO o S_LAT, se realiza una de las 
+* maniobras de acoplamiento lateral (tipo A o B).
+* **********************************************************
+ACOPLE
+
+* Establece velocidad para retroceso para las maniobras
+		ldy	#CICLU1
+		sty	Ciclo
+
+* Pone las ruedas de direccion al frente
+		jsr	FRENTE
+
+*
+* IF    S_FRO = ON     THEN
+*	MANIOBRA_A()
+*
+* ELSE IF
+*	MANIOBRA_B()
+*
+		ldaa	#ON
+		cmpa	S_FRO
+		bne	SN_AC
+
+		jsr	MANIOBRA_A
+		bra	FS_AC
+
+SN_AC		jsr	MANIOBRA_B
+
+* Empieza a buscar la pared
+FS_AC		jsr	FRENOS
+		jsr	FRENTE
+		jsr	IZQUIERDA
+		jsr	RESET
+
+* Mientras no encuentra la pared...avanza
+M_AC		ldaa	#ON
+		cmpa	CONTACT
+		beq	FM_AC
+
+		jsr	AVANZAR
+		bra	M_AC
+
+* Se restablece el valor de CONTACT
+FM_AC           clr     CONTACT
+
+* Direccion al frente para seguir la pared
+		jsr	FRENTE
+
+                rts
+*-----------------------------------------------------------
+*		       MANIOBRA_A
+*-----------------------------------------------------------
+* Proposito: Esta rutina se encarga de realizar los procedimientos
+* necesarios de girar 90 grados a la derecha
+*-----------------------------------------------------------
+MANIOBRA_A
+*
+* IF BANDERA=ON THEN
+*       RETAR1A <-- RETAR12
+*       RETAR2A <-- RETAR22
+* ELSE
+*       RETAR1A <-- RETAR1
+*       RETAR2A <-- RETAR2
+*       BANDERA <-- ON
+*
+                ldaa    #OFF
+                cmpa    BANDERA
+                beq     SN_BAN
+
+* Aqui entra la segunda vez en adelante
+                ldaa    RETAR12
+                staa    RETAR1A
+                ldaa    RETAR22
+                staa    RETAR2A
+                bra     FS_BAN
+
+* Aqui entra la primera vez solamente
+SN_BAN          ldaa    RETAR1
+                staa    RETAR1A
+                ldaa    RETAR2
+                staa    RETAR2A
+
+* Se activa una bandera para indicar que ya paso por este tramo
+                ldaa    #ON
+                staa    BANDERA
+
+FS_BAN  nop
+
+*
+* REVERSA();
+* Conteo <-- 0
+*
+* Se configura los registros del TIMER para el retroceso
+		jsr	REVERSA
+
+* Se reinicializa esta variable para el retardo en EVALRN 
+		clr     Conteo
+
+* 
+* MIENTRAS      RETAR1A<>0   HACER
+*       RETROCEDER();
+*       EVALRN();
+*
+M1_MNA          tst     RETAR1A
+		beq	FM1_MNA
+		
+		jsr	RETROCEDER
+                ldaa    RETAR1A
+		jsr	EVALRN
+                staa    RETAR1A
+
+		bra	M1_MNA
+
+FM1_MNA		nop
+*
+* FRENOS()
+* DERECHA()
+* RESET()
+* Conteo <-- 0
+*
+* Se prepara para girar a la derecha
+		jsr	FRENOS
+		jsr	DERECHA
+		jsr	RESET
+		clr     Conteo
+*
+* MIENTRAS      RETAR2A<>0   HACER
+*	AVANZAR()
+*	EVALRN()
+*
+              
+M2_MNA          tst     RETAR2A
+		beq	FM2_MNA
+
+		jsr	AVANZAR
+                ldaa    RETAR2A
+		jsr	EVALRN
+                staa    RETAR2A
+		bra	M2_MNA
+
+FM2_MNA         nop
+
+                rts
+		
+*////////////////////////////////////////////////////////////
+*			REVERSA		
+*////////////////////////////////////////////////////////////
+* Proposito: Inicializa los registros del TIMER para 
+* marcha atras
+*////////////////////////////////////////////////////////////
+REVERSA
+		jsr	Calc
+		ldx     #REGS
+
+* Grab the value of the TCNT register tal que sea < a 14
+loopr		ldd     TCNT,x
+		cpd	#14
+		bhs	loopr
+
+		std     TOC1,x
+*Set TOC3 to compare DELAY cycles later
+		addd    DELAY
+		std     TOC3,x
+
+* Reset output compare flags
+		ldaa    #OC1F|OC3F
+		oraa	TFLG1,x
+		staa    TFLG1,x 
+
+* Initialize the data register        
+		ldaa    #BITS_R 
+		oraa	OC1D,x
+		staa    OC1D,x
+
+* Initialize the mask register
+		ldaa    #ALLBITR
+		oraa	OC1M,x
+		staa    OC1M,x
+
+* Set up OC2 to reset the bit
+		ldaa    #OC3R
+		oraa	TCTL1,x
+		staa    TCTL1,x
+		
+		rts
+*///////////////////////////////////////////////////////////
+*			RETROCEDER
+*///////////////////////////////////////////////////////////
+* Proposito: Esta rutina hace posible que el ROBOT retroceda
+*
+*///////////////////////////////////////////////////////////
+RETROCEDER
+spinR   	brclr   TFLG1,x OC3F spinR
+
+* Reset the OC1F, OC3F
+		ldaa    #OC1F|OC3F
+		oraa	TFLG1,x	
+		staa    TFLG1,x
+		rts	
+*///////////////////////////////////////////////////////////
+*			EVALRN
+*///////////////////////////////////////////////////////////
+* Proposito: Evalua los retardos para las diferentes maniobras
+*
+*///////////////////////////////////////////////////////////
+EVALRN
+		ldab	Conteo
+		cmpb	#TOPE
+		bne	SN_EVR
+
+		deca
+		clr	Conteo
+		bra	FS_EVR
+
+SN_EVR		inc	Conteo
+
+FS_EVR		rts
+*///////////////////////////////////////////////////////////
+*			FRENTE
+*///////////////////////////////////////////////////////////
+* Proposito: Posiciona las ruedas de direccion al frente
+*///////////////////////////////////////////////////////////
+FRENTE
+		ldx	#REGS
+		ldaa	#FRE               
+		staa	PORTB,x
+                rts
+*///////////////////////////////////////////////////////////
+*			DERECHA
+*///////////////////////////////////////////////////////////
+* Proposito: Posiciona las ruedas de direccion a la derecha
+*///////////////////////////////////////////////////////////
+DERECHA
+		ldx	#REGS
+                ldaa    #DER            
+		staa	PORTB,x
+                rts
+*///////////////////////////////////////////////////////////
+*			IZQUIERDA
+*///////////////////////////////////////////////////////////
+* Proposito: Posiciona las ruedas de direccion  a la izquierda
+*///////////////////////////////////////////////////////////
+IZQUIERDA
+		ldx	#REGS
+                ldaa    #IZQ
+		staa	PORTB,x
+                rts
+*-----------------------------------------------------------
+*			MANIOBRA_B
+*-----------------------------------------------------------
+* Proposito: Esta rutina se encarga de realizar los procedimientos
+* necesarios de girar 90 grados a la izquierda
+*-----------------------------------------------------------
+MANIOBRA_B
+
+*
+* RESET();
+* Conteo <-- 0
+*
+* Se configuran los registros del TIMER para el avance 
+		jsr	RESET
+
+* Se inicializa la variable conteo para el retardo 
+		clr     Conteo
+*
+* MIENTRAS	RETAR3<>0   HACER
+*	AVANZAR()
+*	EVALRN()
+*
+
+M2_MNB		tst	RETAR3
+		beq	FM2_MNB
+
+		jsr	AVANZAR
+		ldaa	RETAR3
+		jsr	EVALRN
+		staa	RETAR3
+		bra	M2_MNB
+
+FM2_MNB		nop
+
+* Restablece la variable RETAR3 
+                ldaa    DELAY3
+                staa    RETAR3
+                
+* Se prepara para retroceder 
+		jsr	FRENOS
+		jsr	DERECHA
+		jsr	REVERSA
+		clr     Conteo 
+
+*
+* MIENTRAS      RETAR4<>0   HACER
+*	RETROCEDER()
+*	EVALRN()
+*
+                               
+M1_MNB          tst     RETAR4
+		beq	FM1_MNB
+		
+		jsr	RETROCEDER
+                ldaa    RETAR4
+		jsr	EVALRN
+                staa    RETAR4
+		bra	M1_MNB
+FM1_MNB         nop
+
+* Restablece la variable RETAR4 
+                ldaa    DELAY4
+                staa    RETAR4
+
+* Se preparara para avanzar
+		jsr	FRENOS
+		jsr	FRENTE
+		jsr	RESET
+		clr	Conteo
+*
+* MIENTRAS      RETAR5<>0   HACER
+*	AVANZAR()
+*	EVALRN()
+*
+                               
+M5_MNB          tst     RETAR5
+		beq	FM5_MNB
+		
+		jsr	AVANZAR
+                ldaa    RETAR5
+		jsr	EVALRN
+                staa    RETAR5
+		bra	M5_MNB
+FM5_MNB         nop
+
+* Restablece la variable RETAR5 
+                ldaa    DELAY5
+                staa    RETAR5
+
+                rts
+                
+* **********************************************************
+*			N_RUMBO
+* **********************************************************
+* Proposito:	Determina el proximo rumbo a partir del punto
+* de acople.
+* **********************************************************
+N_RUMBO         
+
+		ldaa	RUMBO
+		cmpa	#NORTE
+		beq	NDIR1
+		cmpa	#SUR
+		beq	NDIR2
+		cmpa	#ESTE
+		beq	NDIR3
+                cmpa    #OESTE
+                beq     NDIR4
+             
+
+FIN_NR          nop
+		rts
+
+NDIR1		jsr	NDIR1A
+		jmp	FIN_NR
+
+NDIR2		jsr	NDIR2A
+		jmp	FIN_NR
+
+NDIR3		jsr	NDIR3A
+		jmp	FIN_NR
+
+NDIR4		jsr	NDIR4A
+		jmp	FIN_NR
+
+* ----------------------------------------------------------
+*			NDIR1A
+* ----------------------------------------------------------
+* Proposito:	Asume que la direccion actual es norte y
+* determina el nuevo rumbo cuando el sensor lateral lo
+* indique
+* ----------------------------------------------------------		
+NDIR1A          
+		ldaa	S_LAT
+		cmpa	#ON
+		beq	DIRN_O
+		ldaa	#ESTE
+		staa	RUMBO
+
+FIN_ND1A        nop
+		rts
+
+DIRN_O		ldaa	#OESTE
+		staa	RUMBO
+		bra	FIN_ND1A
+* ----------------------------------------------------------
+*			NDIR2A
+* ----------------------------------------------------------
+* Proposito:	Asume que la direccion actual es sur y
+* determina el nuevo rumbo cuando el sensor lateral lo
+* indique
+* ----------------------------------------------------------		
+NDIR2A          
+		ldaa	S_LAT
+		cmpa	#ON
+		beq	DIRS_E
+		ldaa	#OESTE
+		staa	RUMBO
+
+FIN_ND2A        nop
+		rts
+
+DIRS_E		ldaa	#ESTE
+		staa	RUMBO
+		bra	FIN_ND2A
+
+* ----------------------------------------------------------
+*			NDIR3A
+* ----------------------------------------------------------
+* Proposito:	Asume que la direccion actual es este y
+* determina el nuevo rumbo cuando el sensor lateral lo
+* indique
+* ----------------------------------------------------------		
+NDIR3A          
+		ldaa	S_LAT
+		cmpa	#ON
+		beq	DIRE_N
+		ldaa	#SUR
+		staa	RUMBO
+
+FIN_ND3A        nop
+		rts
+
+DIRE_N		ldaa	#NORTE
+		staa	RUMBO
+		bra	FIN_ND3A
+
+* ----------------------------------------------------------
+*			NDIR4A
+* ----------------------------------------------------------
+* Proposito:	Asume que la direccion actual es oeste y
+* determina el nuevo rumbo cuando el sensor lateral lo
+* indique
+* ----------------------------------------------------------		
+NDIR4A          
+		ldaa	S_LAT
+		cmpa	#ON
+		beq	DIRO_S
+		ldaa	#NORTE
+		staa	RUMBO
+
+FIN_ND4A        nop     
+		rts
+
+DIRO_S		ldaa	#SUR
+		staa	RUMBO
+		bra	FIN_ND4A
+
+* **********************************************************
+*			RESET
+* **********************************************************
+* Proposito: Configura los registros del TIMER para el
+* retroceso
+* **********************************************************
+RESET
+
+		jsr	Calc
+
+		ldx     #REGS
+
+* Grab the value of the TCNT register tal que sea < a 14
+loop		ldd     TCNT,x
+		cpd	#14
+		bhs	loop
+
+		std     TOC1,x
+
+* Set TOC2 to compare DELAY cycles later
+		addd    DELAY
+		std     TOC2,x
+
+* Reset output compare flags
+		ldaa    #OC1F|OC2F
+		oraa	TFLG1,x
+		staa    TFLG1,x 
+
+* Initialize the data register        
+		ldaa    #BITS 
+		oraa	OC1D,x
+		staa    OC1D,x
+
+* Initialize the mask register
+		ldaa    #ALLBITS
+		oraa	OC1M,x
+		staa    OC1M,x
+
+* Set up OC2 to reset the bit
+		ldaa    #OC2R
+		oraa	TCTL1,x
+		staa    TCTL1,x
+
+
+		rts
+
+* ----------------------------------------------------------------------------
+* Nombre de la Subrutina: Calc
+* 
+* Parametros de entrada: Ciclo ( 2 bytes) - Representa el ciclo util,
+* su rango de variacion es de 0 a 100
+* 
+* Parametros que devuelve: DELAY (2 bytes) - representa la cantidad de ciclos
+* de reloj que durara el ciclo util
+*
+* Esta sybrutina se encarga de multiplicar la cte. UnPorc por  el contenido
+* de la direcc. dada por Ciclo. El resultado lo guarda en la direcc. DELAY
+* ----------------------------------------------------------------------------
+* DELAY <-- UnPorc * Ciclo
+
+
+Calc		
+
+		ldx	#UnPorc
+		stx	Cuant
+		ldd	#0
+		ldy	Ciclo
+
+M		cpy	#0
+		beq	FinM
+		addd	Cuant
+		dey	
+		bra	M
+
+FinM		std	DELAY
+		
+		rts
+************************************************************
+*			CLR_SENS
+************************************************************
+* Proposito: Restablece los valores de S_FRO , S_LAT y
+* CONTACT en el caso de que fueron afectados por los sensores
+*
+************************************************************
+CLR_SENS
+
+               
+* 
+* IF	S_FRO <> OFF  THEN
+*	S_FRO <-- OFF
+*	
+
+		ldaa	#ON
+		cmpa	S_FRO
+                bne     FS1CS
+
+* Se restablece el sensor frontal
+		ldaa	#OFF		
+		staa	S_FRO
+
+
+* 
+* IF	S_LAT <> OFF  THEN
+* 	S_LAT <-- OFF
+*	
+
+FS1CS           ldaa    #ON
+		cmpa	S_LAT
+                bne     FS2CS
+
+* Se restablece el sensor lateral
+		ldaa	#OFF		
+		staa	S_LAT
+				
+FS2CS           nop
+* 
+* IF    CONTACT <> OFF  THEN
+*       CONTACT <-- OFF
+*	
+                ldaa    #ON
+                cmpa    CONTACT
+                bne     FS3CS
+* Se restablece CONTACT
+                ldaa    #OFF
+                staa    CONTACT
+
+FS3CS           nop
+
+                rts
+* **********************************************************
+*			CTRL_NAV
+* **********************************************************
+* Proposito:	Realiza el desplazamiento en contacto perma-
+* -nente con con la pared, evalua la distancia recorrida a
+* partir del ultimo acople y verifica la condicion fin de 
+* recorrido
+* **********************************************************
+CTRL_NAV
+
+* Se utiliza un nuevo valor para el ciclo util
+		ldy	#CICLU3
+		sty	Ciclo
+
+* Variable que produce un retardo para el antirrebote
+                ldaa    #NTIMESS
+                staa    Demora
+
+*
+* LOOP21
+* MIENTRAS (!(S_FRO or S_LAT or FINAL))
+*	NAVEGAR();
+*
+
+LOOP21		tst	S_FRO
+		bne	END_L21
+		tst	S_LAT
+		bne	END_L21
+		tst	FINAL
+		bne	END_L21
+
+		jsr	NAVEGAR
+
+		bra	LOOP21
+
+END_L21		rts
+
+* ----------------------------------------------------------
+*			NAVEGAR
+* ----------------------------------------------------------
+* Proposito:	Avanza, cuenta la distancia recorrida y
+* evalua la condicion de fin
+* ----------------------------------------------------------
+NAVEGAR         
+                
+
+                jsr     AVANZAR
+                jsr     MEDIDA
+		jsr	EVAL
+
+                rts
+*------------------------------------------------------------
+*			MEDIDA
+*------------------------------------------------------------
+* Proposito:  Mide la distancia recorrida
+*------------------------------------------------------------
+MEDIDA
+
+
+        ldx     #REGS
+* IF Demora = 0 THEN
+        ldaa    Demora
+        cmpa    #0
+        bne     SNREB
+
+* IF PAVIEJO <> PACTN
+        ldaa    PACNT,x
+        cmpa    PAVIEJO
+        beq     FSREB
+
+* DIST <-- DIST +1
+        ldy     DISTANCIA
+        ldab    #ON
+        aby     
+        sty     DISTANCIA
+* CONT <-- CONT +1
+        ldy     CONT
+        ldab    #ON
+        aby
+        sty     CONT
+        
+* PAVIEJO <-- PACNT
+        ldaa    PACNT,x
+        staa    PAVIEJO
+        bra     FSREB
+
+* Demora <-- NTIMES
+        ldaa    #NTIMES
+        staa    Demora
+        bra     FSREB
+* ELSE
+SNREB   dec     Demora
+FSREB   rts
+
+
+* ----------------------------------------------------------
+*			EVAL
+* ----------------------------------------------------------
+* Proposito:	Calcula el desplazamiento neto, si el des-
+* -plazamiento neto es cero hemos llegado al punto de inicio.
+* ----------------------------------------------------------
+EVAL
+*
+* IF  RUMBO = NORTE  THEN
+*       L_NORTE <-- L_NORTE +1
+*
+		ldaa	#NORTE
+		cmpa	RUMBO
+		bne	FSEVL1
+
+                ldy     L_NORTE        Incrementa L_NORTE
+		iny
+		sty	L_NORTE
+                bra     FSEVL4
+*
+* IF  RUMBO = SUR  THEN
+*       L_SUR <-- L_SUR +1
+*
+FSEVL1          ldaa    #SUR            
+		cmpa	RUMBO
+		bne	FSEVL2
+
+                ldy     L_SUR          Incrementa L_SUR
+		iny
+                sty     L_SUR
+                bra     FSEVL4
+*
+* IF  RUMBO = ESTE  THEN
+*       L_ESTE <-- L_ESTE +1
+*
+FSEVL2		ldaa	#ESTE
+		cmpa	RUMBO
+		bne	FSEVL3
+
+                ldy     L_ESTE         Incrementa L_ESTE
+		iny
+                sty     L_ESTE
+                bra     FSEVL4
+*
+* IF  RUMBO = OESTE  THEN
+*       L_OESTE <-- L_OESTE +1
+*		
+FSEVL3		ldaa	#OESTE
+		cmpa	RUMBO
+		bne	FSEVL4
+
+                ldy     L_OESTE        Incrementa L_OESTE
+		iny
+		sty	L_OESTE
+                
+FSEVL4		nop
+*
+* IF L_NORTE > L_SUR THEN
+*       MAYOR_A <-- L_NORTE
+*       MENOR_A <-- L_SUR
+*
+		ldy	L_SUR
+		ldx	L_NORTE
+		cpx	L_SUR
+		blo	ELSEIF1
+
+		stx	MAYOR_A
+		sty	MENOR_A
+		bra	ENDIF1
+*
+* ELSE
+*       MENOR_A <-- L_NORTE
+*       MAYOR_A <-- L_SUR
+*
+ELSEIF1		stx	MENOR_A
+		sty	MAYOR_A
+*
+* IF L_ESTE > L_OESTE THEN
+*       MAYOR_A <-- L_ESTE
+*       MENOR_A <-- L_OESTE
+*
+
+ENDIF1		ldy	L_OESTE
+		ldx	L_ESTE
+		cpx	L_OESTE
+		blo	ELSEIF2	
+
+		stx	MAYOR_B
+		sty	MENOR_B
+		bra	ENDIF2
+*
+* ELSE
+*       MENOR_B <-- L_ESTE
+*       MAYOR_B <-- L_OESTE
+*
+
+ELSEIF2		stx	MENOR_B
+		sty	MAYOR_B
+
+ENDIF2		nop
+
+* IF LADOS > 2 THEN
+		ldaa	LADOS
+                cmpa    #MIN
+		blo	ENDIF3
+
+* IF PRECISION+MENOR_A > MAYOR_A
+		ldab	#PRECISION
+		ldx	MENOR_A
+		abx
+		
+		cpx	MAYOR_A
+		blo	ENDIF3
+
+* IF PRECISION+MENOR_B > MAYOR_B
+		ldx	MENOR_B
+		abx
+		cpx	MAYOR_B
+		blo	ENDIF3
+* FINAL <-- ON
+		ldaa	#ON
+		staa	FINAL
+
+ENDIF3		nop
+
+	
+
+
+		rts
+
+* **********************************************************
+*			GUARDAR
+* **********************************************************
+* Proposito:	Guardar en la direccion de memoria indicada
+* por el puntero la distancia recorrida y el rumbo.
+* **********************************************************
+GUARDAR		
+		ldy	CONT
+		ldx	PUNTERO
+		sty	0,x
+		
+		ldaa	RUMBO
+		staa	2,x
+
+		ldx	PUNTERO
+		ldab	#3
+		abx
+		stx	PUNTERO
+
+		ldx	#CLEAR
+		stx	CONT
+
+		inc	LADOS
+		
+			
+		rts
+
+* **************************************************************************************
+*                                    COM
+*            MODULO DE PRUEBA DE COMUNICACION
+* **************************************************************************************
+* Autor:     Ariel Guerrero / Luis Jara
+* Fecha:     Sab 22/jul/2000
+* **************************************************************************************
+* Fecha		Version		Comentario
+* 22/jul	1		Imprime un caracter con OUTSTR
+* 22/jul	2		Se reimplementa OUTSTR con OUTPUT()
+* 22/jul        3               Se utiliza input
+* 27/jul	4		Implementacion p/ HC11
+* 28/jul	5		Mejoras en el stuffing
+* 29/jul	6		Pruebas de com
+* 01/ago	7		Se transmite los caracteres en un solo bloque,
+*				rellenado de caracteres si dato= caracter_ctrl
+* **************************************************************************************
+       
+*		MAPA DE MEMORIA A TX
+ 
+* |-------------------|
+* | Perimetro         |	$DA00
+* |-------------------|
+* | Num. de Lados     |	$DA02
+* |-------------------|
+* | RECORD(i)	      |	$DA03
+* |-------------------|
+* | RECORD(i+1)       |	$DA06
+* |-------------------|
+*	    |
+*	    v
+
+                               
+COM		jsr	ESPERAR
+
+		jsr	DELAYc		
+
+* Formato del bloque de datos 1(BD1)
+* -----------------------
+* | 	BD	|   ETX	|
+* -----------------------
+* BD :	Bloque de datos a transmitir
+* ETX :	Terminacion del bloque de datos
+                              
+                              
+* Calculo del Numero de bytes a transmitir
+* NUM = TRES + NUML*TRES
+
+		ldaa    NUML
+		inca		
+ 		ldab	#TRES
+		mul			D <- TRES * (1 + NUML)
+*		ldd	#22
+		std	NUM
+
+* LP1:
+* Mientras( NUM <> 0 )
+*	Transmitir_BD;
+
+		ldy	#uDAT
+
+LP1		ldd	NUM
+*		subd	#1
+		subd	#0
+
+ 		beq	FIN_LP1
+		std	NUM
+
+		ldaa	0,Y		A <- M{x}
+
+* SI(A==ETX) RELLENAR1;
+ 		cmpa	#ETX
+ 		beq	RELLENAR1
+                               
+NXT1 		jsr	OUTPUT
+ 		iny
+		ldd	NUM
+		subd	#1
+		std	NUM
+
+ 		bra	LP1
+                               
+* FIN de TX de comunicacion                               
+FIN_LP1		ldaa	#ETX
+ 		jsr	OUTPUT
+
+		rts
+                               
+                              
+RELLENAR1	jsr	STUFFING
+ 		bra	NXT1
+                               
+* ------------------------------------------------------------
+*		STUFFING
+* ------------------------------------------------------------
+* Proposito:	Rellenado de caracteres de control
+* Fecha:	27/jul
+* Autor:	AG/LJ
+* ------------------------------------------------------------
+STUFFING       jsr     OUTPUT
+               rts
+
+* ------------------------------------------------------------
+*		ESPERAR
+* ------------------------------------------------------------
+* Proposito:	Espera cualquier caracter para sincronizar
+* Fecha:	27/jul
+* Autor:	AG/LJ
+* ------------------------------------------------------------
+ESPERAR	        jsr     INPUT
+* Mientras(No haya dato) esperar_para_sincronizar;
+                cmpa    #NUL
+                beq     ESPERAR
+ 		rts
+
+* ------------------------------------------------------------
+*		DELAYc
+* ------------------------------------------------------------
+* Proposito:	provee un retardo para sincronizacion
+* Fecha:	29/jul
+* Autor:	AG/LJ
+* ------------------------------------------------------------
+DELAYc          clr     CNTcom          * Inicializar contador
+		ldaa	#255
+		staa	CNTcom
+delay1c		nop
+		nop
+		nop
+		nop
+		nop
+		dec	CNTcom
+		tst	CNTcom
+		bne	delay1c
+		rts
+
+
+************************************************************
+************************************************************
+************************************************************
+************************************************************
+rs_IC1		
+	
+* Se establece el sensor frontal a ON
+		ldaa	#ON	
+		staa	S_FRO
+
+* Se setea la bandera
+		ldx	#REGS
+                ldaa    #IC1F
+                oraa    TFLG1,x
+                staa    TFLG1,x
+		
+		rti
+*************************************************************
+rs_IC2		
+
+* Se restablece el sensor frontal a ON
+		ldaa	#ON		
+		staa	S_LAT
+
+* Se setea la bandera
+		ldx	#REGS
+                ldaa    #IC2F
+                oraa    TFLG1,x
+                staa    TFLG1,x
+
+		rti
+************************************************************
+rs_IC3		
+
+* Se restablece la variable CONTACT a ON
+		ldaa	#ON		
+		staa	CONTACT
+
+* Se setea la bandera
+		ldx	#REGS
+                ldaa    #IC3F
+                oraa    TFLG1,x
+                staa    TFLG1,x
+
+		rti
+************************************************************
+************************************************************
+************************************************************
+* Rutina de servicio de interrupcion del IC1
+		org	IC1V
+                jmp     rs_IC1
+
+* Rutina de servicio de interrupcion del IC2
+		org	IC2V
+                jmp     rs_IC2
+
+* Rutina de servicio de interrupcion del IC3
+		org	IC3V
+                jmp     rs_IC3
+************************************************************
+************************************************************
+************************************************************
